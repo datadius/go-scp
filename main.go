@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	clientConfig, err := auth.PasswordKey("claud", "Hq$8ndX5p6$c", ssh.InsecureIgnoreHostKey())
+	clientConfig, err := auth.PasswordKey("claud", "", ssh.InsecureIgnoreHostKey())
 	if err != nil {
 		fmt.Print("Failed to create config: ", err)
 		return
