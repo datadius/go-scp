@@ -11,37 +11,46 @@ import (
 )
 
 func main() {
-	clientConfig, err := auth.PasswordKey("claud", "", ssh.InsecureIgnoreHostKey())
+	// Use SSH key authentication from the auth package
+	// we ignore the host key in this example, please change this if you use this library
+	clientConfig, _ := auth.PasswordKey(
+		"claud",
+		"tiger",
+		ssh.InsecureIgnoreHostKey(),
+	)
+
+	// For other authentication methods see ssh.ClientConfig and ssh.AuthMethod
+
+	// Create a new SCP client
+	client := scp.NewClient("localhost:2022", &clientConfig)
+
+	// Connect to the remote server
+	err := client.Connect()
 	if err != nil {
-		fmt.Print("Failed to create config: ", err)
-		return
+		fmt.Println("Couldn't establish a connection to the remote server ", err)
 	}
 
-	client := scp.NewClient("localhost:22", &clientConfig)
+	// Open a file
+	f, _ := os.OpenFile("./hello.txt", os.O_RDWR|os.O_CREATE, 0777)
 
-	err = client.Connect()
-	if err != nil {
-		fmt.Print("Failed to connect: ", err)
-		return
-	}
-
-	f, err := os.Create("test.mp4")
-	if err != nil {
-		fmt.Print("Failed to open: ", err)
-		return
-	}
-
+	// Close client connection after the file has been copied
 	defer client.Close()
 
+	// Close the file after it has been copied
 	defer f.Close()
 
-	// if the connection requires a PTY, then it will not work
-	//err = client.CopyFromRemoteProgressPassThru(context.Background(), f, "hello.txt", nil)
+	// Finally, copy the file over
+	// Usage: CopyFromFile(context, file, remotePath, permission)
 
-	err = client.CopyFromRemoteProgressPassThru(context.Background(), f, "test.mp4", nil)
+	// the context can be adjusted to provide time-outs or inherit from other contexts if this is embedded in a larger application.
+	err = client.CopyFromRemoteProgressPassThru(
+		context.Background(),
+		f,
+		"hello.txt",
+		nil,
+	)
 
 	if err != nil {
-		fmt.Print("Failed to copy: ", err)
-		return
+		fmt.Println("Error while copying file ", err)
 	}
 }

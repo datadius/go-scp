@@ -529,6 +529,17 @@ func (a *Client) CopyFromRemoteProgressPassThru(
 			errCh <- errors.New(res.GetMessage())
 			return
 		}
+		// Parse a second time
+		res, err = ParseResponse(r)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if res.IsFailure() {
+			errCh <- errors.New(res.GetMessage())
+			return
+		}
+		//
 
 		infos, err := res.ParseFileInfos()
 		if err != nil {
