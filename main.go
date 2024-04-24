@@ -43,7 +43,7 @@ func main() {
 	// Usage: CopyFromFile(context, file, remotePath, permission)
 
 	// the context can be adjusted to provide time-outs or inherit from other contexts if this is embedded in a larger application.
-	err = client.CopyFromRemoteProgressPassThru(
+	err = client.CopyFromRemotePreserveProgressPassThru(
 		context.Background(),
 		f,
 		"hello.txt",

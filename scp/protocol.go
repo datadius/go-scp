@@ -9,6 +9,7 @@ package scp
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -20,6 +21,13 @@ const (
 	Ok      ResponseType = 0
 	Warning ResponseType = 1
 	Error   ResponseType = 2
+)
+
+type ProtocolType = rune
+
+const (
+	Chmod ProtocolType = 'C'
+	Time  ProtocolType = 'T'
 )
 
 // Response represent a response from the SCP command.
@@ -35,8 +43,9 @@ const (
 // The remote sends a confirmation after every SCP command, because a failure can occur after every
 // command, the response should be read and checked after sending them.
 type Response struct {
-	Type    ResponseType
-	Message string
+	Type         ResponseType
+	Message      string
+	ProtocolType rune
 }
 
 // ParseResponse reads from the given reader (assuming it is the output of the remote) and parses it into a Response structure.
@@ -57,7 +66,11 @@ func ParseResponse(reader io.Reader) (Response, error) {
 		}
 	}
 
-	return Response{responseType, message}, nil
+	if len(message) > 0 {
+		return Response{responseType, message, rune(message[0])}, nil
+	}
+
+	return Response{responseType, message, ' '}, nil
 }
 
 func (r *Response) IsOk() bool {
@@ -78,6 +91,18 @@ func (r *Response) IsFailure() bool {
 	return r.IsWarning() || r.IsError()
 }
 
+func (r *Response) IsChmod() bool {
+	return r.ProtocolType == Chmod
+}
+
+func (r *Response) IsTime() bool {
+	return r.ProtocolType == Time
+}
+
+func (r *Response) NoStandardProtocolType() bool {
+	return !(r.ProtocolType == Chmod || r.ProtocolType == Time)
+}
+
 // GetMessage returns the message the remote sent back.
 func (r *Response) GetMessage() string {
 	return r.Message
@@ -88,13 +113,36 @@ type FileInfos struct {
 	Filename    string
 	Permissions string
 	Size        int64
+	Atime       int64
+	Mtime       int64
+}
+
+func (fileInfos *FileInfos) Update(new *FileInfos) {
+	if new == nil {
+		return
+	}
+	if new.Filename != "" {
+		fileInfos.Filename = new.Filename
+	}
+	if new.Permissions != "" {
+		fileInfos.Permissions = new.Permissions
+	}
+	if new.Size != 0 {
+		fileInfos.Size = new.Size
+	}
+	if new.Atime != 0 {
+		fileInfos.Atime = new.Atime
+	}
+	if new.Mtime != 0 {
+		fileInfos.Mtime = new.Mtime
+	}
 }
 
 func (r *Response) ParseFileInfos() (*FileInfos, error) {
 	message := strings.ReplaceAll(r.Message, "\n", "")
 	parts := strings.Split(message, " ")
 	if len(parts) < 3 {
-		return nil, errors.New("unable to parse message as file infos")
+		return nil, errors.New("unable to parse Chmod protocol")
 	}
 
 	size, err := strconv.Atoi(parts[1])
@@ -107,6 +155,32 @@ func (r *Response) ParseFileInfos() (*FileInfos, error) {
 		Permissions: parts[0],
 		Size:        int64(size),
 		Filename:    parts[2],
+	}, nil
+}
+
+func (r *Response) ParseFileTime() (*FileInfos, error) {
+	message := strings.ReplaceAll(r.Message, "\n", "")
+	parts := strings.Split(message, " ")
+	fmt.Println(message)
+	if len(parts) < 3 {
+		return nil, errors.New("unable to parse Time protocol")
+	}
+
+	fmt.Println(message)
+	// Many issues could arise substringing like this
+	aTime, err := strconv.Atoi(string(parts[0][1:10]))
+	if err != nil {
+		return nil, errors.New("unable to parse ATime component of message")
+	}
+	mTime, err := strconv.Atoi(string(parts[2][0:10]))
+	if err != nil {
+		return nil, errors.New("unable to parse MTime component of message")
+	}
+
+	return &FileInfos{
+		Message: r.Message,
+		Atime:   int64(aTime),
+		Mtime:   int64(mTime),
 	}, nil
 }
 

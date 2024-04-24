@@ -529,17 +529,6 @@ func (a *Client) CopyFromRemoteProgressPassThru(
 			errCh <- errors.New(res.GetMessage())
 			return
 		}
-		// Parse a second time
-		res, err = ParseResponse(r)
-		if err != nil {
-			errCh <- err
-			return
-		}
-		if res.IsFailure() {
-			errCh <- errors.New(res.GetMessage())
-			return
-		}
-		//
 
 		infos, err := res.ParseFileInfos()
 		if err != nil {
@@ -552,6 +541,164 @@ func (a *Client) CopyFromRemoteProgressPassThru(
 			errCh <- err
 			return
 		}
+
+		if passThru != nil {
+			r = passThru(r, infos.Size)
+		}
+
+		pw := &progressWriter{
+			total:  infos.Size,
+			file:   w,
+			reader: r,
+			onProgress: func(ratio float64) {
+				p.Send(progressMsg(ratio))
+			},
+		}
+
+		m := model{
+			pw:       pw,
+			progress: progress.New(progress.WithDefaultGradient()),
+		}
+
+		p = tea.NewProgram(m)
+
+		go pw.Start()
+
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		err = Ack(in)
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		if _, err := p.Run(); err != nil {
+			fmt.Println("Error running progress: ", err)
+			os.Exit(1)
+		}
+
+		err = session.Wait()
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+	}()
+
+	if a.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, a.Timeout)
+		defer cancel()
+	}
+
+	if err := wait(&wg, ctx); err != nil {
+		return err
+	}
+	finalErr := <-errCh
+	close(errCh)
+	return finalErr
+}
+
+func (a *Client) CopyFromRemotePreserveProgressPassThru(
+	ctx context.Context,
+	w io.Writer,
+	remotePath string,
+	passThru PassThru,
+) error {
+	session, err := a.sshClient.NewSession()
+	if err != nil {
+		return fmt.Errorf("Error creating ssh session in copy from remote: %v", err)
+	}
+	defer session.Close()
+
+	wg := sync.WaitGroup{}
+	errCh := make(chan error, 4)
+
+	wg.Add(1)
+	go func() {
+		var err error
+
+		defer func() {
+			// NOTE: this might send an already sent error another time, but since we only receive opne, this is fine. On the "happy-path" of this function, the error will be `nil` therefore completing the "err<-errCh" at the bottom of the function.
+			errCh <- err
+			// We must unblock the go routine first as we block on reading the channel later
+			wg.Done()
+
+		}()
+
+		r, err := session.StdoutPipe()
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		in, err := session.StdinPipe()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		defer in.Close()
+
+		err = session.Start(fmt.Sprintf("%s -f -p %q", a.RemoteBinary, remotePath))
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		err = Ack(in)
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		res, err := ParseResponse(r)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if res.IsFailure() && res.NoStandardProtocolType() {
+			errCh <- errors.New(res.GetMessage())
+			return
+		}
+
+		timeInfo, err := res.ParseFileTime()
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		err = Ack(in)
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		res, err = ParseResponse(r)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if res.IsFailure() && res.NoStandardProtocolType() {
+			errCh <- errors.New(res.GetMessage())
+			return
+		}
+
+		infos, err := res.ParseFileInfos()
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		err = Ack(in)
+		if err != nil {
+			errCh <- err
+			return
+		}
+
+		infos.Update(timeInfo)
 
 		if passThru != nil {
 			r = passThru(r, infos.Size)
