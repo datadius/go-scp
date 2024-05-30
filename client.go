@@ -315,7 +315,7 @@ func (a *Client) CopyFromRemotePassThru(
 	remotePath string,
 	passThru PassThru,
 ) error {
-	_, err := a.copyFromRemote(ctx, w, remotePath, passThru, false)
+	_, err := a.copyFromRemote(ctx, w, remotePath, passThru, false, false)
 
 	return err
 }
@@ -328,7 +328,7 @@ func (a *Client) CopyFromRemoteFileInfos(
 	remotePath string,
 	passThru PassThru,
 ) (*FileInfos, error) {
-	return a.copyFromRemote(ctx, w, remotePath, passThru, true)
+	return a.copyFromRemote(ctx, w, remotePath, passThru, true, false)
 }
 
 func (a *Client) copyFromRemote(
@@ -337,6 +337,7 @@ func (a *Client) copyFromRemote(
 	remotePath string,
 	passThru PassThru,
 	preserveFileTimes bool,
+    downloadDirectory bool,
 ) (*FileInfos, error) {
 	session, err := a.sshClient.NewSession()
 	if err != nil {
@@ -373,11 +374,17 @@ func (a *Client) copyFromRemote(
 		}
 		defer in.Close()
 
+        command := ""
 		if preserveFileTimes {
-			err = session.Start(fmt.Sprintf("%s -pf %q", a.RemoteBinary, remotePath))
-		} else {
-			err = session.Start(fmt.Sprintf("%s -f %q", a.RemoteBinary, remotePath))
+            command = command + "p"
 		}
+
+        if downloadDirectory {
+            command = command + "r"
+        }
+
+		err = session.Start(fmt.Sprintf("%s -%sf %q", a.RemoteBinary, command, remotePath))
+
 		if err != nil {
 			errCh <- err
 			return
@@ -389,6 +396,7 @@ func (a *Client) copyFromRemote(
 			return
 		}
 
+        // Directory mode
 		fileInfo, err := ParseResponse(r, in)
 		if err != nil {
 			errCh <- err
@@ -418,6 +426,7 @@ func (a *Client) copyFromRemote(
 			errCh <- err
 			return
 		}
+        // end directory mode
 
 		err = session.Wait()
 		if err != nil {
