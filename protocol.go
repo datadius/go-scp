@@ -23,7 +23,11 @@ const (
 	Error   ResponseType = 2
 	Create  ResponseType = 'C'
 	Time    ResponseType = 'T'
+    Directory ResponseType = 'D'
+    EndDirectory ResponseType = 'E'
 )
+
+
 
 // ParseResponse reads from the given reader (assuming it is the output of the remote) and parses it into a Response structure.
 func ParseResponse(reader io.Reader, writer io.Writer) (*FileInfos, error) {
@@ -49,14 +53,14 @@ func ParseResponse(reader io.Reader, writer io.Writer) (*FileInfos, error) {
 		}
 
 		// Exit early because we're only interested in the ok response
-		if responseType == Ok {
+		if responseType == Ok || responseType == EndDirectory {
 			return fileInfos, nil
 		}
 
-		if !(responseType == Create || responseType == Time) {
+		if !(responseType == Create || responseType == Time || responseType == Directory) {
 			return fileInfos, errors.New(
 				fmt.Sprintf(
-					"Message does not follow scp protocol: %s\n Cmmmm <length> <filename> or T<mtime> 0 <atime> 0",
+					"Message does not follow scp protocol: %s\n Cmmmm <length> <filename> or T<mtime> 0 <atime> 0 or Dmmm <length> <filename>",
 					message,
 				),
 			)
@@ -87,7 +91,7 @@ func ParseResponse(reader io.Reader, writer io.Writer) (*FileInfos, error) {
 			responseType = message[0]
 		}
 
-		if responseType == Create {
+		if responseType == Create || responseType == Directory {
 			err = ParseFileInfos(message, fileInfos)
 			if err != nil {
 				return nil, err
@@ -98,7 +102,7 @@ func ParseResponse(reader io.Reader, writer io.Writer) (*FileInfos, error) {
 	return fileInfos, nil
 }
 
-type FileInfos struct {
+type FileInfos struct { 
 	Message     string
 	Filename    string
 	Permissions uint32
@@ -132,11 +136,12 @@ func (fileInfos *FileInfos) Update(new *FileInfos) {
 	}
 }
 
+
 func ParseFileInfos(message string, fileInfos *FileInfos) error {
 	processMessage := strings.ReplaceAll(message, "\n", "")
 	parts := strings.Split(processMessage, " ")
 	if len(parts) < 3 {
-		return errors.New("unable to parse Chmod protocol")
+		return errors.New("unable to parse Chmod protocol or Directory protocol")
 	}
 
 	permissions, err := strconv.ParseUint(parts[0][1:], 0, 32)

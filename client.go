@@ -397,6 +397,7 @@ func (a *Client) copyFromRemote(
 		}
 
         // Directory mode
+        for {
 		fileInfo, err := ParseResponse(r, in)
 		if err != nil {
 			errCh <- err
@@ -426,6 +427,11 @@ func (a *Client) copyFromRemote(
 			errCh <- err
 			return
 		}
+
+        if fileInfos.Filename != "" && downloadDirectory  {
+            break
+        }
+    }
         // end directory mode
 
 		err = session.Wait()
