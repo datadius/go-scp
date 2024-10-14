@@ -428,7 +428,7 @@ func (a *Client) copyFromRemote(
 			return
 		}
 
-        if fileInfos.Filename != "" && downloadDirectory  {
+        if !(fileInfos.Filename != "" && downloadDirectory)  {
             break
         }
     }
